@@ -109,11 +109,26 @@ int mp_hal_stdin_rx_chr(void) {
     return c;
 }
 
-void mp_hal_stdout_tx_strn(const char *str, size_t len) {
-    MP_THREAD_GIL_EXIT();
-    int ret = write(STDOUT_FILENO, str, len);
-    MP_THREAD_GIL_ENTER();
-    (void)ret; // to suppress compiler warning
+mp_uint_t mp_hal_stdout_tx_strn(const char *str, size_t len) {
+    size_t remaining = len;
+    while (remaining > 0) {
+        MP_THREAD_GIL_EXIT();
+        ssize_t ret = write(STDOUT_FILENO, str, remaining);
+        MP_THREAD_GIL_ENTER();
+        if (ret < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            return len - remaining;
+        }
+        /* Defensive check: POSIX guarantees ret <= remaining, but guard against non-compliant implementations. */
+        if ((size_t)ret > remaining) {
+            return len;
+        }
+        str += ret;
+        remaining -= (size_t)ret;
+    }
+    return len;
 }
 
 // cooked is same as uncooked because the terminal does some postprocessing
